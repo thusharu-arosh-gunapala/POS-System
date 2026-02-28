@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('api', {
   generateBillNo: () => ipcRenderer.invoke('sales:generateBillNo'),
   // Dashboard
   getDashboardData: () => ipcRenderer.invoke('dashboard:getData'),
+  getAllAlerts: () => ipcRenderer.invoke('alerts:getAll'),
 
   // Suppliers
   getAllSuppliers: () => ipcRenderer.invoke('suppliers:getAll'),
@@ -41,8 +42,14 @@ contextBridge.exposeInMainWorld('api', {
 
   // Sales / Audit / Settings
   getAllSales: () => ipcRenderer.invoke('sales:getAll'),
+  getSaleById: (saleId) => ipcRenderer.invoke('sales:getById', saleId),
+  getSaleItems: (saleId) => ipcRenderer.invoke('sales:getItems', saleId),
   getAllAuditLogs: () => ipcRenderer.invoke('audit:getAll'),
   getAllSettings: () => ipcRenderer.invoke('settings:getAll'),
+  
+  // Stock Management
+  updateStock: (productId, quantityChange, reason) => ipcRenderer.invoke('stock:update', productId, quantityChange, reason),
+  getStockMovements: (productId) => ipcRenderer.invoke('stock:getMovements', productId),
 
   // Settings
   getSetting: (key) => ipcRenderer.invoke('settings:get', key),

@@ -59,9 +59,27 @@ npm start
 
 The app will open a window with the login screen.
 
-## 🔐 Default Login
+## 🔐 Default Login & Seed Data
 
-To initialize the system with an admin account, first login creates seed data:
+A fresh install starts with an empty database.  The first time you launch the app you
+can either run the seeder script manually or let the login routine create the
+initial records for you.
+
+### Manual seeding (recommended during development)
+
+```bash
+node src/seed.js
+```
+
+This will create a default administrator user, a handful of categories, suppliers,
+products, stock entries and some basic settings.  After the script finishes you
+can start the app normally (`npm start`) and log in with the credentials below.
+
+### Automatic seeding via login
+
+If you simply open the application and log in using the credentials below the
+backend will detect the missing admin user and automatically run the same
+initialization logic.
 
 ```
 Username: admin
@@ -69,7 +87,34 @@ Password: admin123
 Role: Administrator
 ```
 
-**Important**: Change the default password immediately after first login!
+After the first successful login **change the default password immediately** or
+create a new admin account and delete the default one.
+
+#### Troubleshooting login failures
+
+* The login page will show an error message above the form if the credentials
+  are incorrect.  Open the developer tools (Ctrl+Shift+I) and check the console
+  for additional debug logs (`[UI] attempting login` etc.).
+* The username comparison is now case‑insensitive, but you should still enter
+  the username in lowercase (`admin`).
+* Ensure the database has been seeded (see **Manual seeding** above).  You can
+  run `node src/seed.js` manually and confirm the `users` table contains the
+  default administrator.
+* If you see `[AUTH] login attempt for:` logged but the response indicates
+  failure, look for the exact error message (`User not found`,
+  `Invalid password`, etc.) to diagnose the issue.
+* **Resetting the admin password**: if you have forgotten the password you
+  can update it directly in the database with the following one‑liner:
+
+  ```bash
+  node -e "const dbUtils=require('./src/dbUtils');
+  const crypto=require('crypto');
+  (async()=>{ const hash=crypto.createHash('sha256').update('newpass').digest('hex');
+  await dbUtils.updateUserPassword(1,hash); console.log('password reset'); })();"
+  ```
+
+  *(assuming the admin account has `id=1` – change the ID if necessary).*
+  Replace `newpass` with the desired password and then restart the app.
 
 ## 📁 Project Structure
 

@@ -253,8 +253,25 @@ ipcMain.handle('stock:updateStock', async (event, productId, quantity, type, not
       return { success: false, error: 'Not authenticated' };
     }
 
+    // check negative stock rule
+    const allowNeg = (await dbUtils.getSetting('allow_negative_stock')) === '1';
+    const currentQty = await dbUtils.getProductStock(productId);
+    if (!allowNeg && currentQty + quantity < 0) {
+      return { success: false, error: 'Operation would result in negative stock' };
+    }
+
     await dbUtils.updateStock(productId, quantity);
     await dbUtils.recordStockMovement(productId, type, quantity, null, null, note, currentUser.id);
+
+    // low-stock alert if crossing threshold
+    const newQty = currentQty + quantity;
+    const sl = await dbUtils.querySingle(`SELECT reorder_level FROM products WHERE id = ?`, [productId]);
+    const reorder = sl.reorder_level || 0;
+    const threshold = await dbUtils.getSetting('low_stock_threshold');
+    // trigger when newQty <= reorder or threshold is 'reorder_level'
+    if (newQty <= reorder) {
+      await dbUtils.createAlert(productId, 'low_stock', `Stock (${newQty}) at or below reorder level (${reorder})`);
+    }
 
     return { success: true };
   } catch (error) {
@@ -333,9 +350,76 @@ ipcMain.handle('sales:getAll', async () => {
   }
 });
 
+// ========== ALERTS IPC HANDLER ==========
+ipcMain.handle('alerts:getAll', async () => {
+  try {
+    const data = await dbUtils.getAlerts();
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('sales:getById', async (event, saleId) => {
+  try {
+    const data = await dbUtils.getSaleById(saleId);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('sales:getItems', async (event, saleId) => {
+  try {
+    const data = await dbUtils.getSaleItems(saleId);
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('audit:getAll', async () => {
   try {
     const data = await dbUtils.getAllAuditLogs();
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// ========== STOCK MANAGEMENT IPC HANDLERS ==========
+ipcMain.handle('stock:update', async (event, productId, quantityChange, reason) => {
+  try {
+    if (!currentUser || currentUser.role_id !== 1) {
+      return { success: false, error: 'Only admins can adjust stock' };
+    }
+    // enforce negative stock policy
+    const allowNeg = (await dbUtils.getSetting('allow_negative_stock')) === '1';
+    const currentQty = await dbUtils.getProductStock(productId);
+    if (!allowNeg && currentQty + quantityChange < 0) {
+      return { success: false, error: 'Adjustment would result in negative stock' };
+    }
+
+    const result = await dbUtils.updateStock(productId, quantityChange, reason, currentUser.id);
+    await dbUtils.recordAuditLog(currentUser.id, 'STOCK_ADJUSTMENT', 'stock', productId, null, JSON.stringify({ quantityChange, reason }), null);
+
+    // check for low stock after adjustment
+    const newQty = currentQty + quantityChange;
+    const sl = await dbUtils.querySingle(`SELECT reorder_level FROM products WHERE id = ?`, [productId]);
+    const reorder = sl.reorder_level || 0;
+    if (newQty <= reorder) {
+      await dbUtils.createAlert(productId, 'low_stock', `Stock (${newQty}) at or below reorder level (${reorder})`);
+    }
+
+    return { success: true, result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('stock:getMovements', async (event, productId) => {
+  try {
+    const data = await dbUtils.getStockMovements(productId);
     return { success: true, data };
   } catch (error) {
     return { success: false, error: error.message };

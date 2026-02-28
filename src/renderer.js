@@ -9,9 +9,11 @@ const appState = {
 document.addEventListener('DOMContentLoaded', async () => {
     const user = await window.api.getCurrentUser();
     
+    // attach listeners regardless; if login form is not visible they won't run
+    setupLoginListeners();
+
     if (!user) {
         showScreen('loginScreen');
-        setupLoginListeners();
     } else {
         appState.currentUser = user;
         showScreen('appScreen');
@@ -24,28 +26,50 @@ document.addEventListener('DOMContentLoaded', async () => {
 function showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(screenId).classList.add('active');
+    // if we switch back to the login screen make sure the form listener is
+    // attached, even if the appState has a user (e.g. during development when
+    // the main process is still holding a session or after a logout)
+    if (screenId === 'loginScreen') {
+        setupLoginListeners();
+    }
 }
 
 function showContentScreen(screenId) {
+    console.log('[UI] switching to screen', screenId);
     document.querySelectorAll('.content-screen').forEach(s => s.classList.remove('active'));
-    document.querySelector('#' + screenId).classList.add('active');
+    const target = document.querySelector('#' + screenId);
+    if (target) {
+        target.classList.add('active');
+    } else {
+        console.warn('showContentScreen: no element for', screenId);
+    }
 }
 
 // ========== LOGIN HANDLERS ==========
 function setupLoginListeners() {
     const loginForm = document.getElementById('loginForm');
     const loginError = document.getElementById('loginError');
+    if (!loginForm) return;
 
-    loginForm.addEventListener('submit', async (e) => {
+    // remove previous listener if any by cloning
+    const newForm = loginForm.cloneNode(true);
+    loginForm.parentNode.replaceChild(newForm, loginForm);
+    const form = document.getElementById('loginForm');
+
+    form.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        const username = document.getElementById('username').value;
+        // normalize credentials: trim whitespace and make username lowercase
+        // (the database lookup is now case‑insensitive but it's good to send a
+        // consistent value from the UI as well)
+        const username = document.getElementById('username').value.trim().toLowerCase();
         const password = document.getElementById('password').value;
         loginError.classList.remove('show');
 
+        console.log('[UI] attempting login with', username);
         try {
             const result = await window.api.login(username, password);
-            
+            console.log('[UI] login response', result);
             if (result.success) {
                 appState.currentUser = result.user;
                 document.getElementById('username').value = '';
@@ -58,7 +82,8 @@ function setupLoginListeners() {
                 loginError.classList.add('show');
             }
         } catch (error) {
-            loginError.textContent = 'Login failed: ' + error.message;
+            console.error('[UI] login exception', error);
+            loginError.textContent = 'Login failed: ' + (error.message || 'unknown error');
             loginError.classList.add('show');
         }
     });
@@ -110,7 +135,7 @@ function setupNavigation() {
             if (screenId === 'products') loadProducts();
             if (screenId === 'inventory') loadInventory();
             if (screenId === 'sales') loadSales();
-            if (screenId === 'reports') {/* future */}
+            if (screenId === 'reports') loadReports();
             if (screenId === 'audit-logs') loadAuditLogs();
             if (screenId === 'settings') loadSettings();
             if (screenId === 'users') loadUsers();
@@ -184,7 +209,9 @@ async function loadDashboard() {
             document.getElementById('lowStockAlert').textContent = data.lowStockCount;
         const alertEl = document.getElementById('criticalAlerts');
         if (alertEl) {
-            if (data.lowStockCount > 0) {
+            if (data.alertCount && data.alertCount > 0) {
+                alertEl.textContent = `${data.alertCount} alert(s)`;
+            } else if (data.lowStockCount > 0) {
                 alertEl.textContent = `${data.lowStockCount} low stock item(s)`;
             } else {
                 alertEl.textContent = 'No critical alerts';
@@ -289,12 +316,22 @@ async function showLowStockModal() {
     }
 }
 
+// ========== UTILS ==========
+function ensureTableBody(id) {
+    const tb = document.getElementById(id);
+    if (!tb) {
+        console.error('Table body not found:', id);
+    }
+    return tb;
+}
+
 // ========== SUPPLIERS ==========
 async function loadSuppliers() {
     try {
         const res = await window.api.getAllSuppliers();
-        if (res.success) {
-            const tbody = document.getElementById('suppliersList');
+        const tbody = ensureTableBody('suppliersList');
+        if (!tbody) return;
+        if (res.success && res.data && res.data.length > 0) {
             tbody.innerHTML = '';
             res.data.forEach(s => {
                 const tr = document.createElement('tr');
@@ -312,9 +349,13 @@ async function loadSuppliers() {
                 `;
                 tbody.appendChild(tr);
             });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-secondary); font-style:italic;">No suppliers found</td></tr>';
         }
     } catch (err) {
         console.error('loadSuppliers error', err);
+        const tbody = ensureTableBody('suppliersList');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-secondary);">Error loading suppliers</td></tr>';
     }
 }
 
@@ -388,20 +429,6 @@ async function deactivateSupplier(id) {
 }
 
 // ========== CATEGORIES ==========
-async function loadCategories() {
-    try {
-        const res = await window.api.getCategories();
-        if (res.success) {
-            const tbody = document.getElementById('categoriesList');
-            tbody.innerHTML = '';
-            res.data.forEach(c => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${c.name}</td><td><button class="btn-delete" onclick="editCategory(${c.id},'${c.name}')">Edit</button></td>`;
-                tbody.appendChild(tr);
-            });
-        }
-    } catch (e) { console.error(e); }
-}
 
 function showCategoryModal(existing) {
     const modal = document.createElement('div');
@@ -442,21 +469,22 @@ async function submitCategoryForm(editId) {
 async function loadCategories() {
     try {
         const res = await window.api.getCategories();
-        if (res.success) {
-            const tbody = document.getElementById('categoriesList');
+        const tbody = ensureTableBody('categoriesList');
+        if (!tbody) return;
+        if (res.success && res.data && res.data.length > 0) {
             tbody.innerHTML = '';
             res.data.forEach(c => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `<td>${c.name}</td><td><button class="btn-delete" onclick="showCategoryModal({id:${c.id},name:'${c.name}'})">Edit</button></td>`;
                 tbody.appendChild(tr);
             });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:var(--text-secondary); font-style:italic;">No categories</td></tr>';
         }
-    } catch (e) { console.error(e); }
-}
-
-    if (confirm('Disable this supplier?')) {
-        const res = await window.api.deactivateSupplier(id);
-        if (res.success) loadSuppliers();
+    } catch (e) {
+        console.error(e);
+        const tbody = ensureTableBody('categoriesList');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="2" style="text-align:center; color:var(--text-secondary);">Error loading categories</td></tr>';
     }
 }
 
@@ -464,11 +492,11 @@ async function loadCategories() {
 async function loadProducts() {
     try {
         const result = await window.api.getAllProducts();
-        
-        if (result.success) {
-            const tbody = document.getElementById('productsList');
-            tbody.innerHTML = '';
+        const tbody = ensureTableBody('productsList');
+        if (!tbody) return;
 
+        if (result.success && result.data && result.data.length > 0) {
+            tbody.innerHTML = '';
             result.data.forEach(product => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -488,61 +516,482 @@ async function loadProducts() {
                 tbody.appendChild(row);
                 row.addEventListener('click', () => showProductDetails(product));
             });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--text-secondary); font-style:italic;">No products</td></tr>';
         }
     } catch (error) {
         console.error('Load products error:', error);
+        const tbody = ensureTableBody('productsList');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--text-secondary);">Error loading products</td></tr>';
     }
 }
 
-// show simple inventory list
+// Inventory Management Functions
+document.addEventListener('DOMContentLoaded', () => {
+    const addBtn1 = document.getElementById('btnAddProductInventory');
+    const addBtn2 = document.getElementById('btnAddProductInventory2');
+    const adjustBtn = document.getElementById('btnAdjustStock');
+    
+    if (addBtn1) addBtn1.onclick = () => showAddProductModal();
+    if (addBtn2) addBtn2.onclick = () => showAddProductModal();
+    if (adjustBtn) adjustBtn.onclick = bulkStockAdjustment;
+});
+
 async function loadInventory() {
+    // hook up alerts button when inventory screen loads
+    const btnAlerts = document.getElementById('btnViewAlerts');
+    if (btnAlerts) btnAlerts.onclick = showAlertsModal;
+    try {
+        console.log('Loading inventory...');
+        const tbody = document.getElementById('inventoryTable');
+        const emptyDiv = document.getElementById('inventoryEmptyState');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-secondary);">Loading inventory...</td></tr>';
+        }
+
+        const res = await window.api.getAllProducts();
+        console.log('API Response:', res);
+
+        if (!tbody) {
+            console.error('Inventory table element not found!');
+            return;
+        }
+
+        // reset visibility first
+        if (emptyDiv) {
+            emptyDiv.style.display = 'none';
+        }
+        tbody.style.display = '';
+
+        // Calculate inventory overview
+        let totalSKUs = 0;
+        let totalStockValueSelling = 0;
+        let totalStockValueCost = 0;
+        let lowStockCount = 0;
+        let outOfStockCount = 0;
+
+        if (res.success && res.data && res.data.length > 0) {
+            console.log('Found', res.data.length, 'products');
+            tbody.innerHTML = '';
+            
+            res.data.forEach(p => {
+                console.log('Adding product:', p.name);
+                const tr = document.createElement('tr');
+                const stockLevel = p.current_qty || 0;
+                const reorderLevel = p.reorder_level || 10;
+                const stockStatus = stockLevel <= reorderLevel ? 'low' : 'normal';
+                
+                // Update counters
+                totalSKUs++;
+                totalStockValueSelling += (p.selling_price || 0) * stockLevel;
+                totalStockValueCost += (p.cost_price || 0) * stockLevel;
+                if (stockLevel === 0) outOfStockCount++;
+                if (stockLevel <= reorderLevel) lowStockCount++;
+
+                tr.innerHTML = `
+                    <td>${p.code}</td>
+                    <td>${p.name}</td>
+                    <td class="stock-${stockStatus}">${stockLevel}</td>
+                    <td>${p.unit || 'pcs'}</td>
+                    <td>${p.category_name || 'N/A'}</td>
+                    <td>${reorderLevel}</td>
+                    <td>
+                        <span class="badge badge-${stockStatus}">${stockStatus === 'low' ? 'Low Stock' : 'Normal'}</span>
+                    </td>
+                    <td>
+                        <button class="btn-edit" onclick="adjustStock(${p.id}, '${p.name}', ${stockLevel})">Adjust</button>
+                        <button class="btn-primary" onclick="viewStockHistory(${p.id})">History</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else if (res.success && res.data && res.data.length === 0) {
+            console.log('No products available');
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-secondary);">No products available</td></tr>';
+            if (emptyDiv) {
+                emptyDiv.style.display = 'block';
+            }
+        } else {
+            console.warn('Inventory API returned failure or unexpected format', res);
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-secondary);">Unable to load inventory</td></tr>';
+            if (emptyDiv) {
+                emptyDiv.style.display = 'block';
+            }
+        }
+        
+        // Update overview cards
+        document.getElementById('totalSKUs').textContent = totalSKUs;
+        document.getElementById('totalStockValue').textContent = '$' + totalStockValueSelling.toFixed(2) + ' / $' + totalStockValueCost.toFixed(2) + ' (sell/cost)';
+        document.getElementById('lowStockCount').textContent = lowStockCount;
+        document.getElementById('outOfStockCount').textContent = outOfStockCount;
+        
+    } catch(e){
+        console.error('Error in loadInventory:', e);
+        const tbody = document.getElementById('inventoryTable');
+        const emptyDiv = document.getElementById('inventoryEmptyState');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-secondary);">Error loading inventory</td></tr>';
+        if (emptyDiv) {
+            emptyDiv.style.display = 'block';
+        }
+        
+        // Reset overview cards on error
+        document.getElementById('totalSKUs').textContent = '0';
+        document.getElementById('totalStockValue').textContent = '$0';
+        document.getElementById('lowStockCount').textContent = '0';
+        document.getElementById('outOfStockCount').textContent = '0';
+    }
+}
+
+// show alerts modal
+async function showAlertsModal() {
+    try {
+        const resp = await window.api.getAllAlerts();
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        let rows = '';
+        if (resp.success && resp.data.length) {
+            rows = resp.data.map(a =>
+                `<tr><td>${a.product_name||'?'}</td><td>${a.type}</td><td>${a.message}</td><td>${a.created_at}</td></tr>`
+            ).join('');
+        } else {
+            rows = '<tr><td colspan="4" style="text-align:center;">No alerts</td></tr>';
+        }
+        modal.innerHTML = `<div class="modal-content">
+            <h2>Alerts</h2>
+            <table class="mini-table" style="width:100%;margin-bottom:15px;">
+                <thead><tr><th>Product</th><th>Type</th><th>Message</th><th>Date</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <button class="btn-prev" onclick="closeModal(this)">Close</button>
+        </div>`;
+        document.body.appendChild(modal);
+    } catch(err) {
+        console.error('Error loading alerts', err);
+        alert('Error loading alerts: ' + err.message);
+    }
+}
+
+async function adjustStock(productId, productName, currentStock) {
+    const newStock = prompt(`Current stock for ${productName}: ${currentStock}\n\nEnter new stock quantity:`, currentStock);
+    if (newStock === null) return; // User cancelled
+    
+    const quantity = parseInt(newStock);
+    if (isNaN(quantity) || quantity < 0) {
+        alert('Please enter a valid positive number');
+        return;
+    }
+    
+    const reason = prompt('Enter reason for stock adjustment:');
+    if (!reason) {
+        alert('Reason is required');
+        return;
+    }
+    
+    try {
+        const res = await window.api.updateStock(productId, quantity - currentStock, reason);
+        if (res.success) {
+            alert('Stock adjusted successfully!');
+            loadInventory();
+        } else {
+            alert('Error: ' + res.error);
+        }
+    } catch(e) {
+        alert('Error adjusting stock: ' + e.message);
+    }
+}
+
+async function viewStockHistory(productId) {
+    try {
+        const res = await window.api.getStockMovements(productId);
+        if (res.success) {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            
+            let historyHtml = '<h3>Stock Movement History</h3>';
+            if (res.data.length > 0) {
+                historyHtml += '<div class="stock-history">';
+                res.data.forEach(movement => {
+                    const type = movement.quantity_change > 0 ? 'add' : 'remove';
+                    historyHtml += `
+                        <div class="movement-row ${type}">
+                            <span class="date">${movement.created_at}</span>
+                            <span class="change">${movement.quantity_change > 0 ? '+' : ''}${movement.quantity_change}</span>
+                            <span class="reason">${movement.reason}</span>
+                            <span class="user">by ${movement.username || 'System'}</span>
+                        </div>
+                    `;
+                });
+                historyHtml += '</div>';
+            } else {
+                historyHtml += '<p>No stock movements recorded</p>';
+            }
+            
+            modal.innerHTML = `
+                <div class="modal-content">
+                    ${historyHtml}
+                    <div style="margin-top:15px; display:flex;gap:10px; justify-content:flex-end;">
+                        <button class="btn-danger" onclick="closeModal(this)">Close</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+    } catch(e) {
+        alert('Error loading stock history: ' + e.message);
+    }
+}
+
+// Bulk Stock Adjustment
+async function bulkStockAdjustment() {
     try {
         const res = await window.api.getAllProducts();
-        if (res.success) {
-            const tbody = document.getElementById('inventoryTable');
-            if (!tbody) return;
-            tbody.innerHTML = '';
-            res.data.forEach(p => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${p.code}</td><td>${p.name}</td><td>${p.current_qty||0}</td>`;
-                tbody.appendChild(tr);
-            });
+        if (!res.success) {
+            alert('Error loading products for adjustment');
+            return;
         }
-    } catch(e){console.error(e);}
+        
+        // Create modal for bulk adjustment
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        
+        let content = `
+            <div class="modal-content" style="width: 80%; max-width: 800px;">
+                <h3>Bulk Stock Adjustment</h3>
+                <div class="modal-body">
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Current Stock</th>
+                                    <th>New Stock</th>
+                                    <th>Change</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bulkAdjustTable">
+        `;
+        
+        res.data.forEach(p => {
+            const stockLevel = p.current_qty || 0;
+            content += `
+                <tr>
+                    <td>${p.name}</td>
+                    <td>${stockLevel}</td>
+                    <td><input type="number" min="0" value="${stockLevel}" id="stock_${p.id}" style="width: 80px; padding: 5px;"></td>
+                    <td id="change_${p.id}">${stockLevel - stockLevel}</td>
+                </tr>
+            `;
+        });
+        
+        content += `
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <label>Reason for adjustment: <input type="text" id="bulkAdjustReason" placeholder="Enter reason" style="width: 100%; padding: 8px; margin-top: 5px;"></label>
+                    </div>
+                </div>
+                <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn-danger" onclick="closeModal(this)">Cancel</button>
+                    <button class="btn-primary" onclick="performBulkAdjustment()">Apply Adjustments</button>
+                </div>
+            </div>
+        `;
+        
+        modal.innerHTML = content;
+        document.body.appendChild(modal);
+        
+        // Add event listeners to update change values
+        res.data.forEach(p => {
+            const input = document.getElementById(`stock_${p.id}`);
+            input.addEventListener('input', function() {
+                const newValue = parseInt(this.value) || 0;
+                const currentValue = p.current_qty || 0;
+                const changeElement = document.getElementById(`change_${p.id}`);
+                changeElement.textContent = newValue - currentValue;
+            });
+        });
+        
+    } catch(e) {
+        alert('Error preparing bulk adjustment: ' + e.message);
+    }
 }
 
-// load sales history
-async function loadSales() {
+async function performBulkAdjustment() {
     try {
-        const res = await window.api.getAllSales();
-        if (res.success) {
-            const tbody = document.getElementById('salesTable');
-            if (!tbody) return;
-            tbody.innerHTML = '';
-            res.data.forEach(s => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${s.bill_no}</td><td>${s.cashier_name||''}</td><td>$${s.total_amount.toFixed(2)}</td><td>${s.created_at}</td>`;
-                tbody.appendChild(tr);
-            });
+        const res = await window.api.getAllProducts();
+        const reason = document.getElementById('bulkAdjustReason').value.trim();
+        
+        if (!reason) {
+            alert('Please enter a reason for the adjustment');
+            return;
         }
-    } catch(e){console.error(e);}
+        
+        const adjustments = [];
+        
+        for (const p of res.data) {
+            const newStockInput = document.getElementById(`stock_${p.id}`);
+            const newStock = parseInt(newStockInput.value) || 0;
+            const currentStock = p.current_qty || 0;
+            
+            if (newStock !== currentStock) {
+                adjustments.push({
+                    productId: p.id,
+                    newQuantity: newStock,
+                    reason: reason
+                });
+            }
+        }
+        
+        if (adjustments.length === 0) {
+            alert('No changes detected');
+            closeModal(document.querySelector('.modal')); // Close modal
+            return;
+        }
+        
+        // Process adjustments
+        let successCount = 0;
+        for (const adj of adjustments) {
+            const result = await window.api.updateStock(adj.productId, adj.newQuantity - (adj.currentStock || 0), adj.reason);
+            if (result.success) {
+                successCount++;
+            }
+        }
+        
+        alert(`Successfully adjusted ${successCount} products`);
+        closeModal(document.querySelector('.modal')); // Close modal
+        loadInventory(); // Refresh inventory
+        
+    } catch(e) {
+        alert('Error performing bulk adjustment: ' + e.message);
+    }
 }
 
-// load audit logs
+// Audit Log Management Functions
 async function loadAuditLogs() {
     try {
         const res = await window.api.getAllAuditLogs();
-        if (res.success) {
-            const tbody = document.getElementById('auditTable');
-            if (!tbody) return;
+        const tbody = document.getElementById('auditTable');
+        if (!tbody) {
+            console.error('Audit logs table element not found!');
+            return;
+        }
+
+        if (res.success && res.data && res.data.length > 0) {
             tbody.innerHTML = '';
-            res.data.forEach(a => {
+            res.data.forEach(log => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${a.created_at}</td><td>${a.username||''}</td><td>${a.action}</td><td>${a.table_name}</td><td>${a.record_id||''}</td>`;
+                tr.innerHTML = `
+                    <td>${log.created_at || 'N/A'}</td>
+                    <td>${log.user_name || 'System'}</td>
+                    <td>${log.action || 'N/A'}</td>
+                    <td>${log.table_name || 'N/A'}</td>
+                    <td>${log.record_id || 'N/A'}</td>
+                `;
                 tbody.appendChild(tr);
             });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-secondary);">No audit logs available</td></tr>';
         }
-    } catch(e){console.error(e);}
+    } catch(e) {
+        console.error('Error in loadAuditLogs:', e);
+        const tbody = document.getElementById('auditTable');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-secondary);">Error loading audit logs</td></tr>';
+    }
+}
+
+// Sales Management Functions
+async function loadSales() {
+    try {
+        const res = await window.api.getAllSales();
+        const tbody = document.getElementById('salesTable');
+        if (!tbody) return;
+
+        if (res.success && res.data && res.data.length > 0) {
+            tbody.innerHTML = '';
+            res.data.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${s.bill_no}</td>
+                    <td>${s.cashier_name||''}</td>
+                    <td>$${s.total_amount.toFixed(2)}</td>
+                    <td>${s.payment_method || 'N/A'}</td>
+                    <td>${s.created_at}</td>
+                    <td>
+                        <button class="btn-primary" onclick="viewSaleDetails(${s.id})">View</button>
+                        <button class="btn-edit" onclick="printSaleReceipt(${s.id})">Print</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } else {
+            // show a clear empty message when there are no records
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); font-style:italic;">No sales recorded</td></tr>';
+        }
+    } catch(e){
+        console.error(e);
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); font-style:italic;">Error loading sales</td></tr>';
+    }
+}
+
+
+function printSaleReceipt(saleId) {
+    alert('Receipt printing functionality will be implemented with thermal printer integration');
+}
+
+
+// load reports
+async function loadReports() {
+    try {
+        // Generate sales summary report
+        const salesRes = await window.api.getAllSales();
+        const productsRes = await window.api.getAllProducts();
+        
+        // we will render into the placeholder div so that the outer
+        // structure of the page-card remains intact and the heading stays
+        // visible even when there is no data
+        const reportContent = document.getElementById('reportsContent');
+        if (!reportContent) return;
+        
+        if (salesRes.success && productsRes.success) {
+            // Calculate summary statistics
+            const totalSales = salesRes.data.reduce((sum, s) => sum + s.total_amount, 0);
+            const totalTransactions = salesRes.data.length;
+            const avgTransaction = totalTransactions > 0 ? totalSales / totalTransactions : 0;
+            const totalProducts = productsRes.data.length;
+            const lowStockItems = productsRes.data.filter(p => p.current_qty <= (p.reorder_level || 10)).length;
+            
+            // Create report content
+            reportContent.innerHTML = `
+                <div class="report-grid">
+                    <div class="report-card">
+                        <h3>Sales Summary</h3>
+                        <div class="report-stat"><span>Total Sales:</span><span>$${totalSales.toFixed(2)}</span></div>
+                        <div class="report-stat"><span>Total Transactions:</span><span>${totalTransactions}</span></div>
+                        <div class="report-stat"><span>Average Transaction:</span><span>$${avgTransaction.toFixed(2)}</span></div>
+                    </div>
+                    <div class="report-card">
+                        <h3>Inventory Summary</h3>
+                        <div class="report-stat"><span>Total Products:</span><span>${totalProducts}</span></div>
+                        <div class="report-stat"><span>Low Stock Items:</span><span>${lowStockItems}</span></div>
+                        <div class="report-stat"><span>Stock Value:</span><span>$${calculateStockValue(productsRes.data).toFixed(2)}</span></div>
+                    </div>
+                </div>
+                <div class="report-actions">
+                    <button class="btn-primary" onclick="generateSalesReport()"><i class="fas fa-file-pdf"></i> Generate PDF Report</button>
+                    <button class="btn-secondary" onclick="exportData()"><i class="fas fa-download"></i> Export Data</button>
+                </div>
+            `;
+        } else {
+            // if one of the calls failed or returned empty we keep the
+            // placeholder text
+            reportContent.innerHTML = '<p style="color:var(--text-secondary);">No report data available</p>';
+        }
+    } catch(e){
+        console.error(e);
+        const reportContent = document.getElementById('reportsContent');
+        if (reportContent) reportContent.innerHTML = '<p style="color:var(--text-secondary);">Error loading reports</p>';
+    }
 }
 
 // load settings list
@@ -555,47 +1004,231 @@ async function loadSettings() {
             tbody.innerHTML = '';
             res.data.forEach(s => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${s.key}</td><td>${s.value}</td><td>${s.description||''}</td>`;
+                tr.innerHTML = `<td>${s.key}</td><td>${s.value}</td><td>${s.description||''}</td><td><button class="btn-edit" onclick="editSetting('${s.key}','${encodeURIComponent(s.value)}','${encodeURIComponent(s.description||'')}')">Edit</button></td>`;
                 tbody.appendChild(tr);
             });
+            const addBtn = document.getElementById('btnAddSetting');
+            if (addBtn) addBtn.onclick = showAddSettingModal;
         }
-    } catch(e){console.error(e);}
+    } catch(e){console.error(e);}    
 }
 
+// Helper functions for reports
+function calculateStockValue(products) {
+    return products.reduce((total, product) => {
+        const stockValue = (product.current_qty || 0) * (product.cost_price || 0);
+        return total + stockValue;
+    }, 0);
+}
+
+// Report generation functions
+async function generateSalesReport() {
+    try {
+        const salesRes = await window.api.getAllSales();
+        const productsRes = await window.api.getAllProducts();
+        
+        if (salesRes.success && productsRes.success) {
+            // Create a simple CSV report
+            let csvContent = "Sales Report\n\n";
+            csvContent += "Date,Product,Quantity,Unit Price,Total\n";
+            
+            // Add sales data
+            salesRes.data.forEach(sale => {
+                csvContent += `${sale.created_at},Sale #${sale.bill_no},1,${sale.total_amount},${sale.total_amount}\n`;
+            });
+            
+            // Create and download file
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `sales-report-${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            alert('Sales report generated successfully!');
+        }
+    } catch(e) {
+        console.error('Error generating report:', e);
+        alert('Error generating report: ' + e.message);
+    }
+}
+
+function exportData() {
+    alert('Data export functionality coming soon!');
+}
+
+// Settings functions
+async function showAddSettingModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h2>Add New Setting</h2>
+            <label>Key<input type="text" id="settingKey" placeholder="setting_key"></label>
+            <label>Value<input type="text" id="settingValue" placeholder="setting value"></label>
+            <label>Description<textarea id="settingDescription" placeholder="Description of this setting"></textarea></label>
+            <div style="margin-top:15px; display:flex;gap:10px; justify-content:flex-end;">
+                <button class="btn-success" onclick="submitSettingForm()">Create</button>
+                <button class="btn-danger" onclick="closeModal(this)">Cancel</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+async function editSetting(key, encodedValue, encodedDescription) {
+    const value = decodeURIComponent(encodedValue);
+    const description = decodeURIComponent(encodedDescription);
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h2>Edit Setting</h2>
+            <label>Key<input type="text" id="settingKey" value="${key}" readonly></label>
+            <label>Value<input type="text" id="settingValue" value="${value}"></label>
+            <label>Description<textarea id="settingDescription">${description}</textarea></label>
+            <div style="margin-top:15px; display:flex;gap:10px; justify-content:flex-end;">
+                <button class="btn-success" onclick="submitSettingForm()">Update</button>
+                <button class="btn-danger" onclick="closeModal(this)">Cancel</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+async function submitSettingForm() {
+    const modal = document.querySelector('.modal-content');
+    const key = modal.querySelector('#settingKey').value.trim();
+    const value = modal.querySelector('#settingValue').value.trim();
+    const description = modal.querySelector('#settingDescription').value.trim();
+    
+    if (!key) {
+        alert('Setting key is required');
+        return;
+    }
+    
+    try {
+        const res = await window.api.setSetting(key, value, description);
+        if (res.success) {
+            closeModal(modal.querySelector('button.btn-danger'));
+            loadSettings();
+            alert('Setting saved successfully!');
+        } else {
+            alert('Error: ' + res.error);
+        }
+    } catch(e) {
+        alert('Error saving setting: ' + e.message);
+    }
+}
+
+// Product details modal
+async function showProductDetails(product) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h2>Product Details</h2>
+            <div class="product-details">
+                <div class="detail-row"><span>Code:</span><span>${product.code}</span></div>
+                <div class="detail-row"><span>Name:</span><span>${product.name}</span></div>
+                <div class="detail-row"><span>Category:</span><span>${product.category_name || 'N/A'}</span></div>
+                <div class="detail-row"><span>Brand:</span><span>${product.brand || 'N/A'}</span></div>
+                <div class="detail-row"><span>Current Stock:</span><span>${product.current_qty || 0}</span></div>
+                <div class="detail-row"><span>Reorder Level:</span><span>${product.reorder_level || 'N/A'}</span></div>
+                <div class="detail-row"><span>Cost Price:</span><span>$${product.cost_price?.toFixed(2) || 'N/A'}</span></div>
+                <div class="detail-row"><span>Selling Price:</span><span>$${product.selling_price?.toFixed(2) || 'N/A'}</span></div>
+            </div>
+            <div style="margin-top:15px; display:flex;gap:10px; justify-content:flex-end;">
+                <button class="btn-primary" onclick="editProduct(${product.id})">Edit Product</button>
+                <button class="btn-danger" onclick="closeModal(this)">Close</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+// Sale details modal
+async function showSaleDetails(sale) {
+    try {
+        const itemsRes = await window.api.getSaleItems(sale.id);
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        
+        let itemsHtml = '';
+        if (itemsRes.success && itemsRes.data.length > 0) {
+            itemsHtml = '<h3>Sale Items</h3><div class="sale-items">';
+            itemsRes.data.forEach(item => {
+                itemsHtml += `
+                    <div class="item-row">
+                        <span>${item.product_name}</span>
+                        <span>Qty: ${item.quantity}</span>
+                        <span>$${item.unit_price?.toFixed(2) || '0.00'}</span>
+                        <span>$${(item.quantity * (item.unit_price || 0)).toFixed(2)}</span>
+                    </div>
+                `;
+            });
+            itemsHtml += '</div>';
+        }
+        
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h2>Sale Details</h2>
+                <div class="sale-details">
+                    <div class="detail-row"><span>Bill No:</span><span>${sale.bill_no}</span></div>
+                    <div class="detail-row"><span>Date:</span><span>${sale.created_at}</span></div>
+                    <div class="detail-row"><span>Cashier:</span><span>${sale.cashier_name || 'N/A'}</span></div>
+                    <div class="detail-row"><span>Total Amount:</span><span>$${sale.total_amount?.toFixed(2) || '0.00'}</span></div>
+                    <div class="detail-row"><span>Payment Method:</span><span>${sale.payment_method || 'N/A'}</span></div>
+                </div>
+                ${itemsHtml}
+                <div style="margin-top:15px; display:flex;gap:10px; justify-content:flex-end;">
+                    <button class="btn-primary" onclick="printReceipt(${sale.id})">Print Receipt</button>
+                    <button class="btn-danger" onclick="closeModal(this)">Close</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    } catch(e) {
+        console.error('Error loading sale details:', e);
+        alert('Error loading sale details: ' + e.message);
+    }
+}
+
+function printReceipt(saleId) {
+    alert('Receipt printing functionality coming soon!');
+}
 async function showAddProductModal(existing) {
     // `existing` is optional product object for editing
     const form = document.createElement('div');
     form.className = 'modal';
     form.innerHTML = `
         <div class="modal-content product-form">
-`},{            <div style="display:flex;justify-content:space-between;align-items:center;">
-                <div><button class="btn-back" onclick="goBackToProducts(this)">←</button></div>
-                <h2 style="margin:0">${existing ? 'Edit Product' : 'Add New Product'}</h2>
-                <div></div>
-            </div>
+            <h2>${existing ? 'Edit' : 'Add'} Product</h2>
             <div class="step-indicator">
                 <div class="step active" data-step="basic">Basic</div>
                 <div class="step" data-step="class-unit">Class/Unit</div>
                 <div class="step" data-step="others">Others</div>
             </div>
-            
+
             <div class="step-content active" id="step-basic">
                 <div class="form-grid">
-                    <label>Product Name*<input type="text" id="productName" required></label>
-                    <label>Search Name<input type="text" id="productSearchName" placeholder="alias1, alias2"></label>
-                    <label>Print Name<input type="text" id="productPrintName" maxlength="30"></label>
+                    <label>Name<input type="text" id="productName" required></label>
+                    <label>Search Name<input type="text" id="productSearchName"></label>
+                    <label>Print Name<input type="text" id="productPrintName"></label>
                     <label>Label Name<input type="text" id="productLabelName"></label>
                     <label>Unicode Name<input type="text" id="productUnicodeName"></label>
-                    <label style="align-items:flex-start">Translate<br><button id="btnTranslate">Translate</button></label>
+                    <label>Barcode<input type="text" id="productBarcode"></label>
                 </div>
+                <button id="btnTranslate" class="btn-secondary" type="button">Translate</button>
                 <div class="step-navigation">
-                    <div></div>
-                    <div style="display:flex;gap:8px;align-items:center;">
-                        <button class="btn-next-bottom" onclick="advanceStep(this)">Next: Class/Unit</button>
-                    </div>
+                    <button class="btn-next-bottom" onclick="advanceStep(this)">Next: Class/Unit</button>
                 </div>
             </div>
-            
+
             <div class="step-content" id="step-class-unit">
                 <div class="form-grid">
                     <label>Brand<input type="text" id="productBrand"></label>
@@ -618,12 +1251,10 @@ async function showAddProductModal(existing) {
                 </div>
                 <div class="step-navigation">
                     <button class="btn-prev" onclick="showStep('basic')">Previous</button>
-                    <div style="display:flex;gap:8px;align-items:center;">
-                        <button class="btn-next-bottom" onclick="advanceStep(this)">Next: Others</button>
-                    </div>
+                    <button class="btn-next-bottom" onclick="advanceStep(this)">Next: Others</button>
                 </div>
             </div>
-            
+
             <div class="step-content" id="step-others">
                 <div class="form-grid">
                     <label>Cost Price<input type="number" id="productCost" step="0.01" required></label>
@@ -658,12 +1289,11 @@ async function showAddProductModal(existing) {
 
                 <div class="step-navigation">
                     <button class="btn-prev" onclick="showStep('class-unit')">Previous</button>
-                    <div style="display:flex;gap:8px;align-items:center;">
-                        <button id="submitBtn" onclick="submitProductForm(${existing ? existing.id : ''})" class="btn-success">${existing ? 'Update' : 'Create'} Product</button>
-                        <button onclick="closeModal(this)" class="btn-danger">Cancel</button>
-                    </div>
+                    <button id="submitBtn" onclick="submitProductForm(${existing ? existing.id : ''})" class="btn-success">${existing ? 'Update' : 'Create'} Product</button>
+                    <button onclick="closeModal(this)" class="btn-danger">Cancel</button>
                 </div>
             </div>
+
         </div>
     `;
     document.body.appendChild(form);
@@ -736,10 +1366,17 @@ async function showAddProductModal(existing) {
             if (existing.metadata?.suppliers) {
                 existing.metadata.suppliers.forEach(s => addSupplierRow(s, s.default));
             }
+
+            // show existing image preview if available
+            if (existing.metadata?.image) {
+                const imgHolder = document.createElement('div');
+                imgHolder.style.margin = '10px 0';
+                imgHolder.innerHTML = `<img src="${existing.metadata.image}" alt="product" style="max-width:100%;max-height:150px;object-fit:contain;border:1px solid #ccc;border-radius:4px;">`;
+                form.querySelector('#productImage').parentNode.insertBefore(imgHolder, form.querySelector('#productImage'));
+            }
         };
         fill();
     }
-
 
     // translate placeholder
     form.querySelector('#btnTranslate').addEventListener('click', () => {
@@ -912,7 +1549,7 @@ async function submitProductForm(editId) {
     });
     data.suppliers = suppliers;
     
-    // metadata pack
+    // metadata pack (include image if present, and preserve existing image on edit)
     const metadata = {
         searchName: data.searchName,
         printName: data.printName,
@@ -938,6 +1575,15 @@ async function submitProductForm(editId) {
         taxApplicable: data.taxApplicable,
         suppliers: data.suppliers
     };
+    if (data.image) {
+        metadata.image = data.image;
+    } else if (existing && existing.metadata && existing.metadata.image) {
+        // preserve current image when editing and no new file chosen
+        metadata.image = existing.metadata.image;
+    }
+
+    // attach metadata to payload
+    data.metadata = metadata;
 
     try {
         let result;
@@ -991,11 +1637,10 @@ async function createProduct() {
 async function loadUsers() {
     try {
         const result = await window.api.getAllUsers();
-        
-        if (result.success) {
-            const tbody = document.getElementById('usersList');
+        const tbody = ensureTableBody('usersList');
+        if (!tbody) return;
+        if (result.success && result.data && result.data.length > 0) {
             tbody.innerHTML = '';
-
             result.data.forEach(user => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -1011,9 +1656,13 @@ async function loadUsers() {
                 `;
                 tbody.appendChild(row);
             });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); font-style:italic;">No users</td></tr>';
         }
     } catch (error) {
         console.error('Load users error:', error);
+        const tbody = ensureTableBody('usersList');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">Error loading users</td></tr>';
     }
 }
 
@@ -1243,6 +1892,11 @@ async function handleLogout() {
         appState.currentUser = null;
         appState.currentCart = [];
         showScreen('loginScreen');
+        // clear form fields
+        const u = document.getElementById('username');
+        const p = document.getElementById('password');
+        if (u) u.value = '';
+        if (p) p.value = '';
         setupLoginListeners();
     } catch (error) {
         alert('Logout error: ' + error.message);
@@ -1342,7 +1996,9 @@ function showProductDetails(product) {
 
             <div class="details-grid">
                 <div class="left">
-                    <div class="product-image">Image</div>
+                    <div class="product-image">
+                        ${m.image ? `<img src="${m.image}" alt="${product.name}">` : 'Image'}
+                    </div>
                     <h3 class="name">${product.name}</h3>
                     <p class="muted"><strong>Code:</strong> ${product.code}</p>
                     <p class="muted"><strong>Category:</strong> ${product.category_name || '<em>n/a</em>'}</p>

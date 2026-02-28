@@ -9,7 +9,9 @@ function hashPassword(password) {
 // User queries
 function findUserByUsername(username) {
     return new Promise((resolve, reject) => {
-        db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
+        // use a case-insensitive comparison so that users can enter
+        // uppercase/lowercase variations of their username
+        db.get('SELECT * FROM users WHERE LOWER(username) = LOWER(?)', [username], (err, row) => {
             if (err) reject(err);
             else resolve(row);
         });
@@ -49,6 +51,16 @@ function createUser(username, password, email, phone, roleId) {
 
 function verifyPassword(plainPassword, hashedPassword) {
     return hashPassword(plainPassword) === hashedPassword;
+}
+
+// helper for CLI or administrative operations
+function updateUserPassword(userId, newHashedPassword) {
+    return new Promise((resolve, reject) => {
+        db.run('UPDATE users SET password_hash = ? WHERE id = ?', [newHashedPassword, userId], function(err) {
+            if (err) reject(err);
+            else resolve(this.changes);
+        });
+    });
 }
 
 // Session queries
@@ -349,6 +361,31 @@ function getAllSales() {
     });
 }
 
+function getSaleById(saleId) {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT s.*, u.username as cashier_name
+                FROM sales s
+                LEFT JOIN users u ON s.cashier_id = u.id
+                WHERE s.id = ?`, [saleId], (err, row) => {
+            if (err) reject(err);
+            else resolve(row || null);
+        });
+    });
+}
+
+function getSaleItems(saleId) {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT si.*, p.name as product_name
+                FROM sale_items si
+                LEFT JOIN products p ON si.product_id = p.id
+                WHERE si.sale_id = ?
+                ORDER BY si.id`, [saleId], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+        });
+    });
+}
+
 function getSaleItems(saleId) {
     return new Promise((resolve, reject) => {
         db.all(`SELECT si.*, p.name as product_name
@@ -374,12 +411,82 @@ function getAllAuditLogs() {
     });
 }
 
+// Stock Management Functions
+function updateStock(productId, quantityChange, reason, userId) {
+    return new Promise((resolve, reject) => {
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            
+            // Update stock table
+            db.run(`INSERT INTO stock_movements (product_id, quantity_change, reason, user_id)
+                    VALUES (?, ?, ?, ?)`, [productId, quantityChange, reason, userId], (err) => {
+                if (err) {
+                    db.run('ROLLBACK');
+                    reject(err);
+                    return;
+                }
+                
+                // Update current stock
+                db.run(`INSERT INTO stock (product_id, current_qty, last_updated)
+                        VALUES (?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT(product_id) DO UPDATE SET
+                        current_qty = current_qty + excluded.quantity_change,
+                        last_updated = CURRENT_TIMESTAMP`, [productId, quantityChange], (err) => {
+                    if (err) {
+                        db.run('ROLLBACK');
+                        reject(err);
+                    } else {
+                        db.run('COMMIT');
+                        resolve({ success: true });
+                    }
+                });
+            });
+        });
+    });
+}
+
+function getStockMovements(productId) {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT sm.*, u.username
+                FROM stock_movements sm
+                LEFT JOIN users u ON sm.user_id = u.id
+                WHERE sm.product_id = ?
+                ORDER BY sm.created_at DESC`, [productId], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+        });
+    });
+}
+
 // Settings
 function getSetting(key) {
     return new Promise((resolve, reject) => {
         db.get('SELECT value FROM settings WHERE key = ?', [key], (err, row) => {
             if (err) reject(err);
             else resolve(row ? row.value : null);
+        });
+    });
+}
+
+// Alerts helpers
+function createAlert(productId, type, message) {
+    return new Promise((resolve, reject) => {
+        db.run(`INSERT INTO alerts (product_id, type, message) VALUES (?, ?, ?)`,
+            [productId, type, message], function(err) {
+                if (err) reject(err);
+                else resolve(this.lastID);
+            });
+    });
+}
+
+function getAlerts() {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT a.*, p.name as product_name
+                FROM alerts a
+                LEFT JOIN products p ON a.product_id=p.id
+                ORDER BY a.created_at DESC`, [], (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
         });
     });
 }
@@ -463,6 +570,11 @@ async function getDashboardData() {
     );
     data.lowStockCount = low.count || 0;
 
+    // pending alerts (unsent)
+    const alertCountRow = await querySingle(
+        `SELECT COUNT(*) as count FROM alerts WHERE is_sent = 0`);
+    data.alertCount = alertCountRow.count || 0;
+
     // low stock items (top 10)
     data.lowStockItems = await queryAll(
         `SELECT p.code, p.name, s.current_qty, p.reorder_level, p.brand
@@ -531,5 +643,9 @@ module.exports = {
     setSetting,
     getAllCategories,
     createCategory,
-    getDashboardData
+    getDashboardData,
+    getAllAuditLogs,
+    // helper exports
+    querySingle,
+    getAlerts
 };

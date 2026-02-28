@@ -342,15 +342,59 @@
                 <!-- More screens to follow... -->
                 <div id="inventory" class="content-screen">
                     <div class="page-card">
-                    <div class="screen-header">
-                        <h1>Inventory Management</h1>
-                    </div>
-                    <div class="table-container">
-                        <table>
-                            <thead><tr><th>Code</th><th>Name</th><th>Stock</th></tr></thead>
-                            <tbody id="inventoryTable"></tbody>
-                        </table>
-                    </div>
+                        <!-- Inventory Overview Cards -->
+                        <div class="kpi-cards">
+                            <div class="kpi-card">
+                                <div class="kpi-title">Total SKUs</div>
+                                <div class="kpi-value" id="totalSKUs">0</div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-title">Total Stock Value</div>
+                                <div class="kpi-value" id="totalStockValue">$0</div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-title">Low Stock</div>
+                                <div class="kpi-value" id="lowStockCount">0</div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-title">Out of Stock</div>
+                                <div class="kpi-value" id="outOfStockCount">0</div>
+                            </div>
+                        </div>
+                        <div style="text-align:right; margin-top:8px;">
+                            <button id="btnViewAlerts" class="btn-secondary">View Alerts</button>
+                        </div>
+
+                        <div class="screen-header" style="display: flex; justify-content: space-between; align-items: center;">
+                            <h1>Inventory Management</h1>
+                            <div>
+                                <button id="btnAddProductInventory" class="btn-primary"><i class="fas fa-plus"></i> Add Product</button>
+                                <button id="btnAdjustStock" class="btn-warning" style="margin-left: 10px;"><i class="fas fa-sync-alt"></i> Stock Adjustment</button>
+                            </div>
+                        </div>
+
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Code</th>
+                                        <th>Name</th>
+                                        <th>Current Stock</th>
+                                        <th>Unit</th>
+                                        <th>Category</th>
+                                        <th>Reorder Level</th>
+                                        <th>Stock Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="inventoryTable"></tbody>
+                            </table>
+                        </div>
+
+                        <div id="inventoryEmptyState" style="display:none; text-align:center; color:var(--text-secondary); margin-top:20px;">
+                            <p>No products found in inventory.</p>
+                            <button id="btnAddProductInventory2" class="btn-primary"><i class="fas fa-plus"></i> Add your first product</button>
+                        </div>
                     </div> <!-- end page-card -->
                 </div>
 
@@ -361,7 +405,7 @@
                     </div>
                     <div class="table-container">
                         <table>
-                            <thead><tr><th>Bill No</th><th>Cashier</th><th>Total</th><th>Date</th></tr></thead>
+                            <thead><tr><th>Bill No</th><th>Cashier</th><th>Total</th><th>Payment</th><th>Date</th><th>Actions</th></tr></thead>
                             <tbody id="salesTable"></tbody>
                         </table>
                     </div>
@@ -373,7 +417,9 @@
                     <div class="screen-header">
                         <h1>Reports</h1>
                     </div>
-                    <p>Reports coming soon...</p>
+                    <div id="reportsContent" class="reports-placeholder">
+                        <p style="color:var(--text-secondary);">Use the navigation links to load reports. If no data is available you will see a message here.</p>
+                    </div>
                     </div> <!-- end page-card -->
                 </div>
 
@@ -425,8 +471,10 @@
                     </div>
                     <div class="table-container">
                         <table>
-                            <thead><tr><th>Key</th><th>Value</th><th>Description</th></tr></thead>
+                            <thead><tr><th>Key</th><th>Value</th><th>Description</th><th>Actions</th></tr></thead>
                             <tbody id="settingsTable"></tbody>
+                        </table>
+                        <button id="btnAddSetting" class="btn-secondary" style="margin-top:10px;">+ Add Setting</button>
                         </table>
                     </div>
                     </div> <!-- end page-card -->
