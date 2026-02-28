@@ -1,0 +1,30 @@
+{
+  "name": "pos-system",
+  "version": "1.0.0",
+  "description": "Premium Desktop POS System - Electron + SQLite",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --debug",
+    "seed": "node src/seed.js",
+    "test": "node src/test-login.js && node src/test-product.js"
+  },
+  "keywords": [
+    "pos",
+    "point-of-sale",
+    "retail",
+    "billing",
+    "electron",
+    "sqlite"
+  ],
+  "author": "Premium POS Development",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "electron": "^40.6.1",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.0.0"
+  }
+}

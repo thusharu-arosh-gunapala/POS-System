@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium POS System</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="light-theme">
+    <!-- LOGIN SCREEN -->
+    <div id="loginScreen" class="screen active">
+        <div class="login-container">
+            <div class="login-card">
+                <div class="login-header">
+                    <div class="logo">
+                        <i class="fas fa-cash-register"></i>
+                    </div>
+                    <h1>POS System</h1>
+                    <p class="subtitle">Premium Point of Sale</p>
+                </div>
+
+                <form id="loginForm" class="login-form">
+                    <div class="form-group">
+                        <label for="username">
+                            <i class="fas fa-user"></i> Username
+                        </label>
+                        <input type="text" id="username" required placeholder="Enter your username">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">
+                            <i class="fas fa-lock"></i> Password
+                        </label>
+                        <input type="password" id="password" required placeholder="Enter your password">
+                    </div>
+
+                    <button type="submit" class="btn-login">
+                        <i class="fas fa-sign-in-alt"></i> Login
+                    </button>
+                </form>
+
+                <div id="loginError" class="error-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APPLICATION -->
+    <div id="appScreen" class="screen">
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="logo-mini">
+                    <i class="fas fa-cash-register"></i>
+                </div>
+                <h2>POS System</h2>
+            </div>
+            <div class="header-center">
+                <div class="header-info">
+                    <span id="userDisplay">User</span>
+                    <span id="roleDisplay">Role</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <button id="logoutBtn" class="btn-logout" title="Logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </header>
+
+        <div class="app-container">
+            <!-- SIDEBAR -->
+            <aside class="sidebar">
+                <nav class="nav-menu">
+                    <!-- Admin Menu -->
+                    <div id="adminMenu">
+                        <a href="#" class="nav-item active" data-screen="dashboard">
+                            <i class="fas fa-chart-line"></i>
+                            <span>Dashboard</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="products">
+                            <i class="fas fa-box"></i>
+                            <span>Products</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="suppliers">
+                            <i class="fas fa-truck"></i>
+                            <span>Suppliers</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="categories">
+                            <i class="fas fa-tags"></i>
+                            <span>Categories</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="inventory">
+                            <i class="fas fa-warehouse"></i>
+                            <span>Inventory</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="sales">
+                            <i class="fas fa-receipt"></i>
+                            <span>Sales</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="reports">
+                            <i class="fas fa-file-chart-line"></i>
+                            <span>Reports</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="users">
+                            <i class="fas fa-users"></i>
+                            <span>Users</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="audit-logs">
+                            <i class="fas fa-history"></i>
+                            <span>Audit Logs</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="settings">
+                            <i class="fas fa-cog"></i>
+                            <span>Settings</span>
+                        </a>
+                    </div>
+
+                    <!-- Cashier Menu -->
+                    <div id="cashierMenu" style="display: none;">
+                        <a href="#" class="nav-item active" data-screen="billing">
+                            <i class="fas fa-cash-register"></i>
+                            <span>Billing</span>
+                        </a>
+                        <a href="#" class="nav-item" data-screen="cashier-summary">
+                            <i class="fas fa-chart-pie"></i>
+                            <span>My Summary</span>
+                        </a>
+                    </div>
+                </nav>
+            </aside>
+
+            <!-- MAIN CONTENT -->
+            <main class="main-content">
+                <!-- Dashboard Screen -->
+                <div id="dashboard" class="content-screen active">
+                    <div class="page-card">
+                    <!-- top bar inside dashboard -->
+                    <div class="dashboard-topbar">
+                        <div class="topbar-left">
+                            <span class="shop-name">My Grocery Shop</span>
+                            <span class="current-datetime" id="currentDateTime"></span>
+                        </div>
+                        <div class="topbar-center">
+                            <div id="criticalAlerts">No critical alerts</div>
+                        </div>
+                        <div class="topbar-right">
+                            <button class="icon-btn" title="Notifications"><i class="fas fa-bell"></i></button>
+                            <button class="icon-btn" title="Settings"><i class="fas fa-cog"></i></button>
+    
+                        </div>
+                    </div>
+
+                    <!-- KPI Summary -->
+                    <section class="kpi-cards">
+                        <div class="kpi-card" id="kpiTotalSales">
+                            <div class="kpi-title">Total Sales</div>
+                            <div class="kpi-value" id="totalSales">0</div>
+                            <div class="kpi-sub">vs yesterday</div>
+                        </div>
+                        <div class="kpi-card" id="kpiNetProfit">
+                            <div class="kpi-title">Net Profit</div>
+                            <div class="kpi-value" id="netProfit">$0</div>
+                            <div class="kpi-sub">Margin %</div>
+                        </div>
+                        <div class="kpi-card" id="kpiBills">
+                            <div class="kpi-title">Total Bills</div>
+                            <div class="kpi-value" id="totalCustomers">0</div>
+                            <div class="kpi-sub">Today</div>
+                        </div>
+                        <div class="kpi-card" id="kpiCashCard">
+                            <div class="kpi-title">Cash vs Card</div>
+                            <div class="kpi-value">$0 / $0</div>
+                        </div>
+                        <div class="kpi-card" id="kpiLowStock">
+                            <div class="kpi-title">Low Stock Items</div>
+                            <div class="kpi-value" id="lowStockAlert">0</div>
+                        </div>
+                    </section>
+
+                    <!-- Sales Analytics placeholder -->
+                    <section class="analytics">
+                        <h2>Sales Analytics</h2>
+                        <div class="charts">
+                            <canvas id="hourlySalesChart" height="120"></canvas>
+                            <canvas id="dailyTrendChart" height="120"></canvas>
+                        </div>
+                    </section>
+
+                    <!-- Inventory Intelligence placeholder -->
+                    <section class="inventory-intel">
+                        <h2>Inventory Intelligence</h2>
+                        <div class="widget low-stock">
+                            <h3>Low Stock (Top 10)</h3>
+                            <table class="mini-table" id="lowStockTable"></table>
+                        </div>
+                        <div class="widget overstock">
+                            <h3>Overstock Items</h3>
+                            <p>Coming soon</p>
+                        </div>
+                        <div class="widget fast-moving">
+                            <h3>Fast Moving Products</h3>
+                            <p>Coming soon</p>
+                        </div>
+                    </section>
+                    </div> <!-- end page-card -->
+
+                    <!-- Quick Actions -->
+                    <section class="quick-actions">
+                        <button class="btn-primary" onclick="showAddProductModal()"><i class="fas fa-plus"></i> Add New Product</button>
+                        <button class="btn-warning" onclick="showLowStockModal()"><i class="fas fa-exclamation-circle"></i> View Low Stock</button>
+                        <button class="btn-info"><i class="fas fa-file-download"></i> Download Today Report</button>
+                        <button class="btn-secondary"><i class="fas fa-file-alt"></i> View Audit Logs</button>
+                    </section>
+                </div>
+
+                <!-- Products Screen -->
+                <!-- Suppliers Screen -->
+                <div id="suppliers" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>Supplier Management</h1>
+                        <button id="btnAddSupplier" class="btn-primary">
+                            <i class="fas fa-plus"></i> Add Supplier
+                        </button>
+                    </div>
+                    <div id="suppliersTable" class="table-container">
+                        <table>
+                            <thead><tr>
+                                <th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>Address</th><th>Status</th><th>Actions</th>
+                            </tr></thead>
+                            <tbody id="suppliersList"></tbody>
+                        </table>
+                    </div>
+                    </div> <!-- end page-card -->
+                </div>
+
+                <!-- Categories Screen -->
+                <div id="categories" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>Categories</h1>
+                        <button id="btnAddCategoryScreen" class="btn-primary">
+                            <i class="fas fa-plus"></i> Add Category
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Name</th><th>Actions</th></tr></thead>
+                            <tbody id="categoriesList"></tbody>
+                        </table>
+                    </div>
+                    </div> <!-- end page-card -->
+                </div>
+
+                <!-- Products Screen -->
+                <div id="products" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>Product Management</h1>
+                        <button id="btnAddProduct" class="btn-primary">
+                            <i class="fas fa-plus"></i> Add Product
+                        </button>
+                    </div>
+                    <div id="productsTable" class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Name</th>
+                                    <th>Category</th>
+                                    <th>Brand</th>
+                                    <th>Barcode</th>
+                                    <th>Cost</th>
+                                    <th>Price</th>
+                                    <th>Stock</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="productsList">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Billing Screen -->
+                <div id="billing" class="content-screen">
+                    <div class="page-card">
+                    <div class="billing-container">
+                        <div class="billing-left">
+                            <div class="search-product">
+                                <input type="text" id="productSearch" placeholder="Scan barcode or search product...">
+                            </div>
+                            <div id="cartItems" class="cart-items">
+                                <!-- Cart items populated by JS -->
+                            </div>
+                        </div>
+                        <div class="billing-right">
+                            <div class="bill-summary">
+                                <h3>Bill Summary</h3>
+                                <div class="summary-row">
+                                    <span>Subtotal:</span>
+                                    <span id="billSubtotal">$0.00</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span>Tax:</span>
+                                    <span id="billTax">$0.00</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span>Discount:</span>
+                                    <span id="billDiscount">$0.00</span>
+                                </div>
+                                <div class="summary-row total">
+                                    <span>Total:</span>
+                                    <span id="billTotal">$0.00</span>
+                                </div>
+                                <div class="payment-methods">
+                                    <button class="btn-payment cash-btn">
+                                        <i class="fas fa-money-bill"></i> Cash
+                                    </button>
+                                    <button class="btn-payment card-btn">
+                                        <i class="fas fa-credit-card"></i> Card
+                                    </button>
+                                    <button class="btn-payment qr-btn">
+                                        <i class="fas fa-qrcode"></i> QR
+                                    </button>
+                                </div>
+                                <button id="btnCompleteSale" class="btn-success">
+                                    <i class="fas fa-check"></i> Complete Sale
+                                </button>
+                                <button id="btnCancelSale" class="btn-danger">
+                                    <i class="fas fa-times"></i> Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- More screens to follow... -->
+                <div id="inventory" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>Inventory Management</h1>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Code</th><th>Name</th><th>Stock</th></tr></thead>
+                            <tbody id="inventoryTable"></tbody>
+                        </table>
+                    </div>
+                    </div> <!-- end page-card -->
+                </div>
+
+                <div id="sales" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>Sales History</h1>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Bill No</th><th>Cashier</th><th>Total</th><th>Date</th></tr></thead>
+                            <tbody id="salesTable"></tbody>
+                        </table>
+                    </div>
+                    </div> <!-- end page-card -->
+                </div>
+
+                <div id="reports" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>Reports</h1>
+                    </div>
+                    <p>Reports coming soon...</p>
+                    </div> <!-- end page-card -->
+                </div>
+
+                <div id="users" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>User Management</h1>
+                        <button id="btnAddUser" class="btn-primary">
+                            <i class="fas fa-plus"></i> Add User
+                        </button>
+                    </div>
+                    <div id="usersTable" class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Email</th>
+                                    <th>Phone</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersList">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="audit-logs" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>Audit Logs</h1>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Table</th><th>Record</th></tr></thead>
+                            <tbody id="auditTable"></tbody>
+                        </table>
+                    </div>
+                    </div> <!-- end page-card -->
+                </div>
+
+                <div id="settings" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>Settings</h1>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Key</th><th>Value</th><th>Description</th></tr></thead>
+                            <tbody id="settingsTable"></tbody>
+                        </table>
+                    </div>
+                    </div> <!-- end page-card -->
+                </div>
+
+                <div id="cashier-summary" class="content-screen">
+                    <div class="page-card">
+                    <div class="screen-header">
+                        <h1>My Daily Summary</h1>
+                    </div>
+                    <p>Cashier summary coming soon...</p>
+                    </div> <!-- end page-card -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
